@@ -2,9 +2,9 @@ name: Update Geo Rule-Sets
 
 on:
   schedule:
-    # Every 2 weeks on Monday at 03:00 UTC
+    # Every 2 weeks: 1st and 15th of each month at 03:00 UTC
     - cron: '0 3 1,15 * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # Allow manual trigger from Actions tab
 
 jobs:
   update:
@@ -17,19 +17,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install tools
-        run: sudo apt-get install -y xxd
-
       - name: Download and verify SRS files
         id: download
         run: |
-          set -e
-
           BASE_BLOCK="https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block"
           BASE_COUNTRY="https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country"
           BASE_SAGERNET="https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"
 
-          SRS_V1_MAGIC="53525301"
           FAILED=""
 
           download_and_check() {
@@ -37,49 +31,47 @@ jobs:
             local output="$2"
 
             echo "Downloading: $output"
-            curl -sL --fail --max-time 30 "$url" -o "$output.tmp" || {
-              echo "ERROR: Failed to download $url"
-              FAILED="$FAILED $output"
-              return 1
-            }
+            if ! curl -sL --fail --max-time 30 "$url" -o "${output}.tmp"; then
+              echo "  ERROR: download failed for $url"
+              FAILED="$FAILED ${output}(download_failed)"
+              rm -f "${output}.tmp"
+              return 0
+            fi
 
-            # Check SRS version (first 4 bytes)
-            local magic
-            magic=$(xxd -l 4 "$output.tmp" | awk '{print $2$3}' | head -1)
-
-            if [ "$magic" = "$SRS_V1_MAGIC" ]; then
-              mv "$output.tmp" "$output"
-              echo "  ✓ $output — SRS v1 OK"
+            # Check SRS v1 magic bytes using Python (no xxd needed)
+            MAGIC=$(python3 -c "
+with open('${output}.tmp', 'rb') as f:
+    b = f.read(4)
+print(b.hex())
+")
+            if [ "$MAGIC" = "53525301" ]; then
+              mv "${output}.tmp" "$output"
+              echo "  OK: $output (SRS v1)"
             else
-              rm "$output.tmp"
-              echo "  ✗ $output — INCOMPATIBLE FORMAT (magic: $magic, expected: $SRS_V1_MAGIC)"
-              FAILED="$FAILED $output(v2!)"
+              rm "${output}.tmp"
+              echo "  SKIP: $output — incompatible format (magic=$MAGIC)"
+              FAILED="$FAILED ${output}(SRS_v2)"
             fi
           }
 
-          # Block lists from hiddify-geo
-          download_and_check "$BASE_BLOCK/geosite-category-ads-all.srs"  "geosite-category-ads-all.srs"
-          download_and_check "$BASE_BLOCK/geosite-malware.srs"            "geosite-malware.srs"
-          download_and_check "$BASE_BLOCK/geosite-phishing.srs"           "geosite-phishing.srs"
-          download_and_check "$BASE_BLOCK/geosite-cryptominers.srs"       "geosite-cryptominers.srs"
-          download_and_check "$BASE_BLOCK/geoip-phishing.srs"             "geoip-phishing.srs"
-          download_and_check "$BASE_BLOCK/geoip-malware.srs"              "geoip-malware.srs"
-
-          # Extended ads from SagerNet
+          download_and_check "$BASE_BLOCK/geosite-category-ads-all.srs"   "geosite-category-ads-all.srs"
+          download_and_check "$BASE_BLOCK/geosite-malware.srs"             "geosite-malware.srs"
+          download_and_check "$BASE_BLOCK/geosite-phishing.srs"            "geosite-phishing.srs"
+          download_and_check "$BASE_BLOCK/geosite-cryptominers.srs"        "geosite-cryptominers.srs"
+          download_and_check "$BASE_BLOCK/geoip-phishing.srs"              "geoip-phishing.srs"
+          download_and_check "$BASE_BLOCK/geoip-malware.srs"               "geoip-malware.srs"
           download_and_check "$BASE_SAGERNET/geosite-category-ads-all.srs" "sagernet-geosite-category-ads-all.srs"
 
-          # Country-specific (split tunneling)
           for region in ru ir; do
             download_and_check "$BASE_COUNTRY/geoip-${region}.srs"   "geoip-${region}.srs"
             download_and_check "$BASE_COUNTRY/geosite-${region}.srs" "geosite-${region}.srs"
           done
 
-          # Report results
           if [ -n "$FAILED" ]; then
-            echo "failed_files=$FAILED" >> $GITHUB_OUTPUT
-            echo "has_failures=true" >> $GITHUB_OUTPUT
+            echo "has_failures=true" >> "$GITHUB_OUTPUT"
+            printf 'failed_files<<=EOF\n%s\nEOF\n' "$FAILED" >> "$GITHUB_OUTPUT"
           else
-            echo "has_failures=false" >> $GITHUB_OUTPUT
+            echo "has_failures=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create issue if incompatible files detected
@@ -87,13 +79,28 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const failedFiles = '${{ steps.download.outputs.failed_files }}';
+            const failedFiles = `${{ steps.download.outputs.failed_files }}`;
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: '⚠️ Geo rule-set update failed: incompatible SRS format',
-              body: `## Auto-update failed\n\nThe following files could not be updated because upstream changed to an incompatible SRS format (possibly v2):\n\n\`\`\`\n${failedFiles}\n\`\`\`\n\n## Action required\n\nOur sing-box v1.8.9 only supports SRS v1 (magic bytes \`53525301\`).\n\nOptions:\n1. **Wait** — upstream may revert back to SRS v1\n2. **Upgrade sing-box** — migrate to a newer version that supports SRS v2\n3. **Build our own SRS v1 files** — from source data\n\nCurrent files in repo remain unchanged (last known good SRS v1).`,
-              labels: ['bug', 'urgent']
+              body: [
+                '## Auto-update failed',
+                '',
+                'Files that could not be updated (upstream may have switched to SRS v2):',
+                '```',
+                failedFiles.trim(),
+                '```',
+                '',
+                '**Our sing-box v1.8.9 only supports SRS v1 (magic bytes `53525301`).**',
+                '',
+                'Options:',
+                '1. Wait — upstream may revert to SRS v1',
+                '2. Upgrade sing-box to a version supporting SRS v2',
+                '',
+                '_Existing files unchanged (last known good SRS v1)._',
+              ].join('\n'),
+              labels: ['bug', 'urgent'],
             });
 
       - name: Commit updated files
@@ -101,15 +108,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet; then
-            echo "No changes detected — files are already up to date."
+          git add *.srs
+          if git diff --cached --quiet; then
+            echo "No changes — files already up to date."
           else
-            git add *.srs
             git commit -m "chore: update geo rule-sets $(date +'%Y-%m-%d')
 
 All files verified as SRS v1 (magic bytes 53525301).
 Sources: hiddify/hiddify-geo, SagerNet/sing-geosite"
             git push
-            echo "✓ Updated and pushed successfully"
+            echo "Updated and pushed."
           fi
