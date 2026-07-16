@@ -1,8 +1,22 @@
+import hashlib
+import json
+import time
 import urllib.request
 import os
 import sys
 
 SRS_V1_MAGIC = bytes([0x53, 0x52, 0x53, 0x01])
+
+# Файлы, которые клиент (GeoRefresher) обновляет по manifest.json.
+# Ровно те 6, что вшиты в APK и известны ядру (builder.go addRuleSet).
+MANIFEST_FILES = [
+    "geosite-category-ads-all.srs",
+    "geosite-malware.srs",
+    "geosite-phishing.srs",
+    "geosite-cryptominers.srs",
+    "geoip-phishing.srs",
+    "geoip-malware.srs",
+]
 
 BASE_BLOCK    = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block"
 BASE_COUNTRY  = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country"
@@ -53,6 +67,32 @@ if github_output:
             f.write("EOF\n")
         else:
             f.write("has_failures=false\n")
+
+# manifest.json — для тихого обновления в клиенте (GeoRefresher):
+# клиент качает ~1КБ манифеста, сравнивает sha256 и качает только изменившееся.
+# Пишем ТОЛЬКО если все манифест-файлы на месте (иначе клиент увидит
+# рассинхрон манифест↔файлы). Старый манифест при сбое остаётся валидным.
+manifest_ready = all(os.path.exists(name) for name in MANIFEST_FILES)
+if manifest_ready:
+    entries = []
+    for name in MANIFEST_FILES:
+        with open(name, "rb") as f:
+            data = f.read()
+        entries.append({
+            "name": name,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "size": len(data),
+        })
+    manifest = {
+        "version": 1,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "files": entries,
+    }
+    with open("manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+    print("manifest.json written")
+else:
+    print("manifest.json SKIPPED: not all files present")
 
 if failed:
     print(f"\nFailed: {failed}")
