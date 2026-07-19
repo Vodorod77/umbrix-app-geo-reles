@@ -19,12 +19,15 @@ MANIFEST_FILES = [
 ]
 
 BASE_BLOCK    = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/block"
+# HaGeZi (2026-07): ads = Multi PRO (~255k доменов, «баланс Brave-уровня»),
+# malware = TIF medium (~560k). Источник — onlydomains txt, компилируем в SRS
+# официальным sing-box CLI (см. compile_hagezi ниже). Решение владельца 19.07.
+HAGEZI_PRO = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt"
+HAGEZI_TIF = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/tif.medium-onlydomains.txt"
 BASE_COUNTRY  = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country"
 BASE_SAGERNET = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"
 
 files = [
-    (f"{BASE_BLOCK}/geosite-category-ads-all.srs",   "geosite-category-ads-all.srs"),
-    (f"{BASE_BLOCK}/geosite-malware.srs",             "geosite-malware.srs"),
     (f"{BASE_BLOCK}/geosite-phishing.srs",            "geosite-phishing.srs"),
     (f"{BASE_BLOCK}/geosite-cryptominers.srs",        "geosite-cryptominers.srs"),
     (f"{BASE_BLOCK}/geoip-phishing.srs",              "geoip-phishing.srs"),
@@ -37,6 +40,45 @@ files = [
 ]
 
 failed = []
+
+# --- HaGeZi: txt -> SRS через официальный sing-box CLI (бинарь кладёт workflow) ---
+import subprocess, tempfile
+
+def compile_hagezi(url, out_name):
+    print(f"HaGeZi: {out_name}")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            text = resp.read().decode("utf-8", "replace")
+    except Exception as e:
+        print(f"  ERROR download: {e}")
+        failed.append(f"{out_name}(hagezi_download_failed)")
+        return
+    domains = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("#")]
+    if len(domains) < 10000:  # защита от битой выдачи
+        print(f"  ERROR: слишком мало доменов ({len(domains)}) — оставляем старый файл")
+        failed.append(f"{out_name}(hagezi_too_small)")
+        return
+    src = {"version": 1, "rules": [{"domain_suffix": domains}]}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+        json.dump(src, tf)
+        tmp = tf.name
+    r = subprocess.run(["./sing-box", "rule-set", "compile", tmp, "-o", out_name],
+                       capture_output=True, text=True)
+    os.unlink(tmp)
+    if r.returncode != 0:
+        print(f"  ERROR compile: {r.stderr[:200]}")
+        failed.append(f"{out_name}(compile_failed)")
+        return
+    with open(out_name, "rb") as f:
+        head = f.read(4)
+    if head != SRS_V1_MAGIC:
+        print(f"  ERROR: bad magic {head.hex()}")
+        failed.append(f"{out_name}(bad_magic)")
+        return
+    print(f"  OK: {len(domains)} доменов, {os.path.getsize(out_name)} bytes")
+
+compile_hagezi(HAGEZI_PRO, "geosite-category-ads-all.srs")
+compile_hagezi(HAGEZI_TIF, "geosite-malware.srs")
 
 for url, filename in files:
     print(f"Downloading: {filename}")

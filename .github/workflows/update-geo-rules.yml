@@ -16,6 +16,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install sing-box CLI (for HaGeZi SRS compile)
+        run: |
+          curl -sL -o sb.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-linux-amd64.tar.gz
+          tar xzf sb.tar.gz --strip-components=1 sing-box-1.13.14-linux-amd64/sing-box
+          chmod +x sing-box && rm sb.tar.gz
+
       - name: Download and verify SRS files
         id: download
         run: python3 scripts/update_geo.py
