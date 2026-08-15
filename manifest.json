@@ -1,21 +1,21 @@
 {
   "version": 1,
-  "generated_at": "2026-08-01T05:56:06Z",
+  "generated_at": "2026-08-15T03:39:38Z",
   "files": [
     {
       "name": "geosite-category-ads-all.srs",
-      "sha256": "e3a21e48705b7398f617a49c58bb05f813e7d511e33119558deb481f6b431c52",
-      "size": 1813690
+      "sha256": "ae7fa31aedfe160ab257849b211cbb483fc740cba3374dd7bddae1ac15ef8208",
+      "size": 1804219
     },
     {
       "name": "geosite-malware.srs",
-      "sha256": "89d45c71743a99dd4bf90adb4e3ad5e4b9093d635f3f8f59e26cced6d610a788",
-      "size": 3124059
+      "sha256": "1a31d9ca64494829cfa0f22c765cc7d7f6d27bd9e90eb2028d3078ec99706a98",
+      "size": 2903319
     },
     {
       "name": "geosite-phishing.srs",
-      "sha256": "f6f37a81c3db0a0353536c59898fddfa71d15fcec7a28e0069ae41c701387816",
-      "size": 434517
+      "sha256": "f4d7c2551dc536568e2322b327191f900f01465e3c0e58239ce11fad37582c97",
+      "size": 469454
     },
     {
       "name": "geosite-cryptominers.srs",
@@ -24,13 +24,13 @@
     },
     {
       "name": "geoip-phishing.srs",
-      "sha256": "856d948b4fba36124c8d7af7d0ec383cd949d28e2d3d3e043831a175401b5df9",
-      "size": 252
+      "sha256": "c6130f2da42329b177664a8ff544d2f0280854f562d8af31c1e2cce67dba766b",
+      "size": 263
     },
     {
       "name": "geoip-malware.srs",
-      "sha256": "c5095af5d0a8a6037d132dd57af54a491f5f9e6017b593225b913b6fdfe87982",
-      "size": 5109
+      "sha256": "3c5308052d740829b3e811c8abb05300e4a392280d630121f7e20934b754c46a",
+      "size": 4770
     }
   ]
 }
